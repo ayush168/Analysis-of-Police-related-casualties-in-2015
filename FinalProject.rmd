@@ -1,0 +1,787 @@
+---
+title: "FinalProject"
+author: "Gopal Seshadri"
+date: "April 16, 2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Libraries
+```{r load.lib, message = FALSE, warning = FALSE}
+library(magrittr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+library(purrr)
+library(ggplot2)
+library(plotly)
+library(scales)
+library(gridExtra)
+library(viridis)
+library(MASS)
+library(tigris)
+library(acs)
+library(leaflet)
+library(tibble)
+library(htmlwidgets)
+library(data.table)
+```
+
+## Reading Data
+
+```{r reading.data,  warning = FALSE}
+# police.killings.df <- read.csv('police_killings_2015.csv', header = TRUE)
+# police.killings.df <- police.killings.df %>%
+#                         mutate(age_n = as.numeric(age),
+#                                age_f = case_when(
+#                                  age_n < 18 ~ 'Minor',
+#                                  age_n < 30 ~ 'Age 18 - 30',
+#                                  age_n < 50 ~ 'Age 30 - 50',
+#                                  age_n < 70 ~ 'Age 50 - 70',
+#                                  age_n >= 70 ~ 'Senior Citizen'
+#                                ),
+#                                age_f = factor(age_f, levels = c('Minor', 'Age 18 - 30', 'Age 30 - 50', 'Age 50 - 70', 'Senior Citizen')),
+#                                raceethnicity =  factor(raceethnicity, levels = c('White', 'Black', 'Hispanic/Latino', 'Asian/Pacific Islander', 'Native American', 'Unknown')),
+#                                month = factor(month, levels = c('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')))
+# 
+# police.killings.df <- na.omit(police.killings.df)
+# 
+# police.killings.df$census_code <- apply(police.killings.df, 1, function(row) call_geolocator_latlon(row['latitude'], row['longitude']))
+# 
+# str(police.killings.df)
+```
+
+```{r augumenting.data, warning = FALSE}
+# police.killings.df$tract <- substr(police.killings.df$census_code, 6, 11)
+# 
+# police.killings.df$tract <- as.numeric(police.killings.df$tract)
+# 
+# police.killings.df$code <- substr(police.killings.df$census_code, 1, 11)
+# 
+# police.killings.df$code <- as.numeric(police.killings.df$code)
+
+
+
+```
+
+
+```{r}
+census.df <- read.csv('https://s3.amazonaws.com/eda-proj-2019/PDB_2015_Tract.csv') %>%
+  dplyr::select('State', 'County', 'Tract', 'Tot_Population_CEN_2010', 'pct_Hispanic_CEN_2010', 'pct_NH_White_alone_CEN_2010', 'pct_NH_Blk_alone_CEN_2010', 'pct_NH_AIAN_alone_CEN_2010', 'pct_NH_Asian_alone_CEN_2010', 'pct_NH_NHOPI_alone_CEN_2010', 'pct_College_ACS_09_13', 'pct_Prs_Blw_Pov_Lev_ACS_09_13', 'pct_Civ_unemp_16p_ACS_09_13', 'Aggr_House_Value_ACS_09_13')
+
+str(census.df)
+```
+
+```{r  warning = FALSE}
+census2.df <- census.df %>%
+  mutate(state2 = str_pad(State, 2, 'left', 0),
+         county2 = str_pad(County, 3, 'left', 0),
+         tract2 = str_pad(Tract, 6, 'left', 0),
+         code = as.numeric(paste0(state2, county2, tract2)),
+         tot_pop = Tot_Population_CEN_2010,
+         share_hispanic = pct_Hispanic_CEN_2010,
+         share_White = pct_NH_White_alone_CEN_2010,
+         share_black = pct_NH_Blk_alone_CEN_2010,
+         share_native = pct_NH_AIAN_alone_CEN_2010,
+         share_asian = pct_NH_Asian_alone_CEN_2010 + pct_NH_NHOPI_alone_CEN_2010,
+         share_unknown = 100 - (share_hispanic + share_White + share_black + share_native + share_asian),
+         college = pct_College_ACS_09_13,
+         below_poverty = pct_Prs_Blw_Pov_Lev_ACS_09_13,
+         unemp = pct_Civ_unemp_16p_ACS_09_13,
+         avg_house_value = as.integer(Aggr_House_Value_ACS_09_13)) %>%
+    dplyr::select(county2, code, tot_pop, share_White, share_black, share_hispanic, share_native, share_asian, share_unknown, college, below_poverty, unemp, avg_house_value)
+# 
+# 
+# police.killings2.df <- left_join(police.killings.df, census2.df)
+# 
+# str(police.killings2.df)
+# 
+# write.csv(police.killings2.df, 'police_killing_combined.csv')
+```
+```{r  warning = FALSE}
+police.killings2.df <- read.csv('police_killing_combined.csv', header = TRUE)
+police.killings.df <- police.killings2.df
+```
+
+
+## Univariate Analysis
+
+```{r univariate.analysis, warning = FALSE, fig.width = 6, fig.height = 6, warning = FALSE}
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(age_f) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(age_f, perc) %>%
+        group_by(age_f) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = age_f, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#E69F00', alpha = 0.8) +
+                xlab('Age Groups') +
+                  ylab('Percenatge') +
+                    ggtitle('Police Killings by Age Groups') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                              axis.text = element_text(size = 14))
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(gender) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(gender, perc) %>%
+        group_by(gender) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = gender, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#56B4E9', alpha = 0.8) +
+                xlab('Gender') +
+                  ylab('Percenatge') +
+                    ggtitle('Police Killings by Gender') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14))
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(raceethnicity) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(raceethnicity, perc) %>%
+        group_by(raceethnicity) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = raceethnicity, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#009E73', alpha = 0.8) +
+                xlab('Race Ethnicity') +
+                  ylab('Percentage') +
+                    ggtitle('Police Killings by Race Ethnicity') +
+                      theme_bw() +
+                      theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(armed) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(armed, perc) %>%
+        group_by(armed) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = armed, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#F0E442', alpha = 0.8) +
+                xlab('Armed Info') +
+                  ylab('Percentage') +
+                    ggtitle('Police Killings by Armed Info') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                            axis.text = element_text(size = 14),
+                            axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(classification) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(classification, perc) %>%
+        group_by(classification) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = classification, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#0072B2', alpha = 0.8) +
+                xlab('Cause of Death') +
+                  ylab('Percentage') +
+                    ggtitle('Police Killings by Cause of Death') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                            axis.text = element_text(size = 14),
+                            axis.text.x = element_text(angle = 30, hjust = 1))
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(month) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(month, perc) %>%
+        group_by(month) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = month, y = frac * 100)) +
+              geom_histogram(stat = 'identity', fill = '#D55E00', alpha = 0.8) +
+                xlab('Month') +
+                  ylab('Percenatge') +
+                    ggtitle('Police Killings by Month') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                            axis.text = element_text(size = 14),
+                            axis.text.x = element_text(angle = 30, hjust = 1))
+
+```
+
+```{r}
+
+```
+
+## Bivariate Analysis
+
+```{r bivariate.analysis, fig.width = 12, fig.height = 8, warning = FALSE}
+police.killings.df %>% 
+  filter (armed != 'Disputed') %>%
+  mutate(total = n(),
+         age_f2 = case_when (
+           age_f == 'Minor' ~ 'Minor',
+           age_f == 'Age 18 - 30' ~ 'Age 18 - 30',
+           age_f == 'Age 30 - 50' ~ 'Age > 30',
+           age_f == 'Age 50 - 70' ~ 'Age > 30'
+         ),
+         age_f2 = factor(age_f2, levels = c('Minor', 'Age 18 - 30', 'Age > 30'))) %>%
+    group_by(age_f2, armed) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(age_f2, armed, perc) %>%
+        group_by(age_f2, armed) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = armed, y = frac * 100, fill = armed)) +
+              geom_histogram(stat = 'identity', alpha = 0.8) +
+                facet_wrap( ~age_f2, ncol = 1) +
+                xlab('Armed Info') +
+                  ylab('Percenatge') +
+                    ggtitle('Police Killings by Armed Info given Age Groups') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                              axis.text = element_text(size = 14),
+                              axis.text.x = element_text(angle = 30, hjust = 1)) +
+                            scale_fill_viridis_d()
+
+
+police.killings.df %>%
+  filter (armed != 'Disputed') %>%
+  group_by(raceethnicity) %>%
+    mutate(total = n()) %>%
+  ungroup() %>%
+    group_by(raceethnicity, armed) %>%
+      mutate(perc = n()/total) %>%
+    ungroup() %>%
+      dplyr :: select(raceethnicity, armed, perc) %>%
+        group_by(raceethnicity, armed) %>%
+          summarise(frac = round(mean(perc), 2)) %>%
+            ggplot(aes(x = armed, y = frac * 100, fill = armed)) +
+              geom_histogram(stat = 'identity', alpha = 0.8) +
+                facet_wrap( ~raceethnicity, ncol = 2) +
+                xlab('Armed Info') +
+                  ylab('Percenatge') +
+                    ggtitle('Police Killings by Armed Info given Race ethnicity') +
+                    labs(subtitle = 'Normalized by Race') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                              axis.text = element_text(size = 14),
+                              axis.text.x = element_text(angle = 30, hjust = 1)) +
+                          scale_fill_viridis_d()
+
+
+
+
+police.killings.df %>%
+  mutate(total = n()) %>%
+    group_by(day, month) %>%
+      mutate(count = n()) %>%
+    ungroup() %>%
+      dplyr :: select(day, month, count) %>%
+        group_by(day, month) %>%
+          summarise(total_count = round(mean(count), 2)) %>%
+            ggplot(aes(x = day, y = total_count)) +
+              geom_point() +
+                geom_smooth(method = 'loess', method.args = list(degree = 1), se = FALSE) +
+                facet_wrap( ~month) +
+                xlab('Day') +
+                  ylab('Count') +
+                    ggtitle('Police Killings by Day for each Months') +
+                      theme_bw() +
+                        theme(text = element_text(size = 16),
+                              axis.text = element_text(size = 14),
+                              axis.text.x = element_text(angle = 30, hjust = 1))
+
+```
+
+
+## Univariate Analysis
+
+```{r fig.width = 8, fig.height = 8, warning = FALSE}
+racial.killings.df <- police.killings.df %>%
+                       rowid_to_column() %>%
+                        dplyr::select(rowid, code, raceethnicity) %>%
+                          group_by(code, raceethnicity) %>%
+                            mutate(killing_count = n()) %>%
+                          ungroup() %>%
+                            spread(raceethnicity, killing_count)
+
+racial.killings.df[is.na(racial.killings.df)] <- 0
+
+                          
+racial.killings2.df <- left_join(racial.killings.df, census2.df) %>%
+                        mutate(white_killed = White * (100/ share_White),
+                               black_killed = Black * (100/ share_black),
+                               hispanic_killed = `Hispanic/Latino` * (100/share_hispanic),
+                               asian_killed = `Asian/Pacific Islander` * (100/share_asian),
+                               native_killed = `Native American` * (100/share_native),
+                               unknown_killed = Unknown * (100/share_unknown)) %>%
+                          dplyr::select(code, white_killed, black_killed, hispanic_killed, asian_killed, native_killed, unknown_killed) %>%
+                            gather(key = 'race_killed', value = 'count', -code) 
+
+# str(racial.killings2.df)
+
+#racial.killings2.df$count[is.nan(racial.killings2.df$count)] <- 0
+#racial.killings2.df$count[!is.finite(racial.killings2.df$count)] <- 0
+
+
+temp <-  racial.killings2.df$count
+racial.killings2.df$count2 <- ifelse(is.finite(temp), temp, 0)
+
+# print(racial.killings2.df$count2)
+
+total <- sum(racial.killings2.df$count2)
+print(total)
+
+racial.killings2.df$total <- total
+
+# str(racial.killings2.df)
+    
+racial.summary.df <- racial.killings2.df %>%
+  mutate(race_killed = factor(race_killed, levels = c('white_killed', 'black_killed', 'hispanic_killed', 'asian_killed', 'native_killed', 'unknown_killed'), labels = c('White', 'Black', 'Hispanic/Latino', 'Asian/Pacific Islander', 'Native American', 'Unknown'))) %>%
+  group_by(race_killed) %>%
+    summarise(frac = sum(count2)/mean(total)) 
+
+actuals <- c(0.625, 0.126, 0.149, 0.05, 0.009, 0.041)
+
+racial.summary.df$actuals <- actuals 
+
+print(racial.summary.df)
+
+racial.summary.df %>% 
+  gather(key = 'key', value = 'perc', -race_killed) %>%
+      ggplot(aes(x = race_killed, y = perc * 100, fill = key)) +
+              geom_bar(stat = 'identity', position = 'dodge', alpha = 0.8) +
+                xlab('Race Ethnicity') +
+                  ylab('Percentage') +
+                    ggtitle('Police Killings and Actual Population Proportion by Race') +
+                    labs(subtitle = 'Police Killings Adjusted by Racial Distribution of Tracts') +
+                      theme_bw() +
+                      theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1)) +
+                        scale_fill_viridis_d(name = '', labels = c('Proportion in Population', 'Adjusted Proportion Killed'))
+```
+
+```{r fig.width = 8, fig.height = 8, warning = FALSE}
+
+racial.summary2.df <- racial.killings.df %>%
+                          dplyr::select (White, Black, `Hispanic/Latino`, `Asian/Pacific Islander`, `Native American`, `Unknown`) %>%
+                            gather(White, Black, `Hispanic/Latino`, `Asian/Pacific Islander`, `Native American`, `Unknown`, key = 'race', value = 'value') %>%
+                                group_by(race) %>%
+                                  summarise(count = sum(value)) %>%
+                                    mutate(perc = count/sum(count)) %>%
+                                      dplyr::select(race, perc) %>%
+                                        mutate(race = factor(race, levels = c('White', 'Black', 'Hispanic/Latino', 'Asian/Pacific Islander', 'Native American', 'Unknown'))) %>%
+                                            arrange(race)
+
+str(racial.summary2.df)
+
+
+actuals <- c(0.625, 0.126, 0.149, 0.05, 0.009, 0.041)
+
+racial.summary2.df$actuals <- actuals 
+
+print(racial.summary2.df)
+
+racial.summary2.df %>% 
+  gather(key = 'key', value = 'perc', -race) %>%
+      ggplot(aes(x = race, y = perc * 100, fill = key)) +
+              geom_bar(stat = 'identity', position = 'dodge', alpha = 0.8) +
+                xlab('Race Ethnicity') +
+                  ylab('Percentage') +
+                    ggtitle('Police Killings and Actual Population Proportion by Race') +
+                    #labs(subtitle = 'Police Killings Adjusted by Racial Distribution of Tracts') +
+                      theme_bw() +
+                      theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1)) +
+                        scale_fill_viridis_d(name = '', labels = c('Proportion in Population', 'Proportion Killed'))
+```
+
+
+
+
+## Geographical Analysis
+
+```{r fig.width = 8, fig.height = 8, warning = FALSE}
+state.df <- read.csv('state_data.csv') %>%
+              dplyr::select(State, percent, Region)
+
+state.crime.df <- read.csv('crime_data_state.csv') %>%
+                    mutate_all(funs(gsub(",", "", .)), c('Population', 'Violent.crime')) %>%
+                      mutate(State = factor(State),
+                             Population = as.numeric(Population),
+                             Violent.crime = as.numeric(Violent.crime))
+
+
+state.combined.df <- left_join(state.df, state.crime.df, by = 'State')
+
+#str(state.combined.df)
+
+state.killings.df <- police.killings.df %>% 
+                      group_by(state) %>%
+                        mutate(tot_killings = n()) %>%
+                      ungroup() %>%
+                          dplyr::select(state, tot_killings) %>%
+                            distinct()
+                          
+#str(state.killings.df)
+
+state.combined.df <- left_join(state.combined.df, state.killings.df, by = c('State' = 'state')) 
+
+str(state.combined.df)
+
+killings.crimes.py <- state.combined.df %>% 
+  plot_ly(x = ~tot_killings, 
+          y = ~Population, 
+          z = ~Violent.crime,
+          color = ~Region,
+          size = ~Population, 
+          marker = list(symbol = 'circle', 
+                        sizemode = 'diameter'), 
+          sizes = c(5, 50), 
+          text = ~paste('<br>State:', State,'<br># Violent Crime:', Violent.crime, '<br>Total Killings:', tot_killings,
+                           '<br>Population:', Population),
+          hoverinfo = 'text',
+          type = 'scatter3d', 
+          mode = 'markers') %>%
+
+    layout(title = 'No of Violent Crime vs Total Killings vs Population for each State',
+           scene = list(xaxis = list(title = 'Violent Crime'),
+                        yaxis = list(title = 'Population'),
+                        zaxis = list(title = 'Total Police Killings')))
+
+saveWidget(killings.crimes.py, "killings.crimes.py.html")
+
+killings.crimes.py
+```
+
+
+```{r fig.width = 8, fig.height = 8, warning = FALSE}
+state.combined.df %>%
+  gather(key = 'number_of', value = 'value', -State, -percent, -Region, -Population) %>%
+    ggplot(aes(x = Population, y = value, color = number_of, group = number_of)) +
+      geom_point(size = 1.5, alpha = 0.5) +
+      geom_smooth(method = 'lm', se = FALSE, alpha = 0.5) +
+        xlab('Population') +
+        ggtitle('Police Killings and Violent Crimes vs Population') +
+          scale_color_viridis_d(name = '', labels = c('Total Police Killings', 'No of Violent Crimes')) +
+            theme_bw() +
+              theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1)) +
+                    scale_y_log10(labels = scales::comma) +
+                      scale_x_continuous(labels = scales::comma)
+
+
+state.combined.df %>%
+  gather(key = 'number_of', value = 'value', -State, -percent, -Region, -Population) %>%
+  mutate(percapita = (value * 1000)/Population) %>%
+    ggplot(aes(x = Population, y = percapita, color = number_of, group = number_of)) +
+      #geom_line(size = 1, alpha = 0.6) +
+      geom_point(color = 'White', size = 0.0001) +
+      geom_smooth(method = 'lm', se = FALSE) +
+        xlab('Population') +
+        ylab('Killings Per 1000') +
+        ggtitle('Police Killings and Violent Crimes vs Population') +
+          scale_color_viridis_d(name = 'Per 1000 people', labels = c('Total Police Killings', 'No of Violent Crimes')) +
+            theme_bw() +
+              theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1)) +
+                  scale_y_log10()
+    
+```
+## Geospatial Analysis
+
+```{r warning = FALSE}
+#tracts <- tracts(state = 'TX', cb = TRUE)
+#print(tracts)
+
+pal <- colorNumeric(palette = "YlGnBu", domain = police.killings.df$avg_house_value)
+
+pal2 <- colorFactor(viridis(8), police.killings.df$armed)
+
+
+us.killings.lt <- leaflet() %>%
+  addTiles() %>%
+    setView(-100.0, 40.0, zoom = 4) %>% 
+    addCircleMarkers(data  = police.killings.df, lng = ~longitude, lat = ~latitude, 
+                     radius = 2, clusterOptions = markerClusterOptions())
+
+# us.killings.lt
+
+saveWidget(us.killings.lt, "us.killings.lt.html", selfcontained = FALSE)
+
+#us.killings.lt
+```
+
+```{r warning = FALSE}
+ny.killings.df <- police.killings2.df %>%
+                    filter(state == 'NY')
+
+tracts <- tracts(state = 'NY', cb = TRUE)
+```
+
+
+```{r warning = FALSE}
+ny.killings2.df <- geo_join(tracts, ny.killings.df, 'GEOID', 'code')
+ny.killings2.df <- geo_join(ny.killings2.df, census2.df, 'GEOID', 'code')
+
+pal <- colorNumeric(palette = "YlGnBu", domain = ny.killings2.df$share_black.1)
+
+ny.killings.lt <- ny.killings2.df %>%
+  leaflet() %>%
+  setView(-74.0, 40.8, zoom = 10) %>%
+  addProviderTiles('CartoDB.Positron') %>% 
+  addPolygons(fillColor = ~pal(share_black.1), 
+              color = "#b2aeae",
+              fillOpacity = 0.5, 
+              weight = 1, 
+              smoothFactor = 0.2) %>%
+  addLegend(pal = pal, 
+            values = ~share_black.1, 
+            position = 'topleft', 
+            title = 'Percent of Black Population',
+            labFormat = labelFormat(suffix = '%'))  %>%
+  addCircleMarkers(data  = ny.killings2.df, lng = ~longitude, lat = ~latitude, 
+                     radius = 4, color = 'red') 
+
+saveWidget(ny.killings.lt, "ny.killings.lt.html", selfcontained = FALSE)
+# ny.killings.lt
+```
+
+
+```{r}
+city.data.df <- read.csv('city_2015.csv', header = TRUE)
+
+police.killings.city.df <- police.killings.df %>%
+                              group_by(city) %>%
+                                mutate(killings = n()) %>%
+                                  dplyr::select(city, killings) %>%
+                                    left_join(city.data.df, by = c('city'= 'department_name')) %>%
+                                      dplyr::select(city, killings, total_crime)
+
+
+police.killings.city.df <- na.omit(police.killings.city.df)
+
+str(police.killings.city.df)
+
+police.killings.city.df %>% 
+  filter(total_crime > 0) %>%
+  ggplot(aes(x = total_crime, y = killings)) +
+    geom_point(size = 1, alpha = 0.6) +
+      geom_smooth(method = 'lm', se = FALSE, size = 1.5) +
+      xlab('Total Crime') +
+        ylab('Police Killings') +
+          ggtitle('Total Crime vs Police Killings') +
+            theme_bw() +
+              theme(text = element_text(size = 16),
+                          axis.text = element_text(size = 14),
+                          axis.text.x = element_text(angle = 30, hjust = 1)) +
+                scale_x_log10(labels = scales::comma)
+          
+      
+
+```
+
+```{r}
+
+kill = read.csv("police_killings_2015.csv")
+
+kills_per_city = plyr::count(kill, "city")
+str(kills_per_city)
+kills_per_city = kills_per_city %>% arrange(desc(freq))
+setnames(kills_per_city, "freq", "kills")
+
+```
+
+```{r}
+crime = read.csv("ucr_crime_1975_2015.csv", stringsAsFactors = FALSE)
+crime_per_city = filter(crime, year == 2015)
+
+crime_per_city = within(crime_per_city, rm(ORI, months_reported, source, url, violent_per_100k, homs_per_100k, rape_per_100k, rob_per_100k, agg_ass_per_100k))
+
+crime_per_city$total_crime = crime_per_city$homs_sum + crime_per_city$rape_sum + crime_per_city$rob_sum + crime_per_city$agg_ass_sum + crime_per_city$violent_crime
+
+crime_per_city = crime_per_city %>% arrange(desc(total_crime))
+
+```
+
+```{r}
+
+crime_per_city$department_name[1] = "New York"
+crime_per_city$department_name[41] = "Austin"
+crime_per_city$department_name[30] = "Columbus"
+setnames(crime_per_city, "department_name", "city")
+
+```
+
+```{r}
+top_kills_15 = kills_per_city[1:16,]
+top_kills_15 <- subset(top_kills_15, city!="Bakersfield")
+
+kills_and_crime <- merge(top_kills_15,crime_per_city,by="city")
+
+kills_and_crime = within(kills_and_crime, rm(year, total_pop, homs_sum, rape_sum, rob_sum, agg_ass_sum, violent_crime))
+kills_and_crime = kills_and_crime %>% arrange(desc(kills))
+
+```
+
+```{r}
+kills_and_crime2 <- kills_and_crime %>%
+                      mutate(kills = (kills - min(kills))/(range(kills)[2] - range(kills)[1]), 
+                             total_crime = (total_crime - min(total_crime))/(range(total_crime)[2] - range(total_crime)[1])) %>%
+                        gather(key = 'key', value = 'value', -city) %>%
+                          mutate(key = factor(key))
+
+#kills_and_crime2
+kills_and_crime2$value[15] = 0.01
+kills_and_crime2$value[25] = 0.01
+```
+
+```{r}
+kills_and_crime2 <- transform(kills_and_crime2, value = ifelse(key == "kills", kills_and_crime2$value*-1, value))
+#kills_and_crime2
+
+```
+
+```{r fig.width = 10, fig.height = 8}
+
+kills_and_crime3 <- kills_and_crime2 %>% mutate (city = factor(city, levels = c("Los Angeles", "Houston", "Las Vegas", "Chicago", "Indianapolis", "Phoenix", "Dallas", "Miami", "San Francisco", "Austin", "Columbus", "New York", "San Antonio", "San Diego", "Denver")))
+
+n1 <- ggplot(kills_and_crime3, aes(x = city, y = value, fill = key)) + 
+  geom_bar(data = subset(kills_and_crime3, key == "kills"), stat = "identity") + 
+  geom_bar(data = subset(kills_and_crime3, key == "total_crime"), stat = "identity") + 
+  scale_y_continuous(breaks = seq(-1, 1, 0.25),
+                     labels = paste0(as.character(c(seq(1, 0, -0.25), seq(0.25, 1, 0.25)))))+ 
+  coord_flip() + 
+  scale_fill_viridis_d(name = '', labels = c('Total Police Kills', 'Total Crimes Commited')) +
+  labs(caption = "All the values are normalised", title = ("Top 10 Cities (based on Police Kills)\n")) +
+  xlab("City") + ylab("Police Killings vs Crimes Commited") + 
+  theme_bw() + theme(text = element_text(size = 16),
+                              axis.text = element_text(size = 16))
+
+n1
+
+
+
+```
+
+## Models
+
+```{r setup2, include=FALSE}
+library(tidycensus)
+key <- "d7eed9b5912de74830466c59c2c5bc484691b82a"
+library(tidyverse)
+library(arm)
+census_api_key(key)
+```
+
+
+```{r loadup}
+killings <- read.csv("police_killings_2015.csv")
+states <- killings %>% group_by(state) %>% tally() %>% filter(state != "DC")
+state.census <- get_estimates(geography = "state", product = "population")
+state.vars <- get_estimates(geography = "state", product = "characteristics", breakdown = c("RACE"),          breakdown_labels = TRUE) %>% spread(RACE, value)
+state.demo <- get_estimates(geography = "state", product = "characteristics", breakdown = c("RACE"),          breakdown_labels = TRUE) %>% spread(RACE, value) %>% mutate(non.white.perc = 1 - `White alone or in combination`/`All races`, black.perc = `Black alone or in combination`/`All races`) %>% dplyr::select(NAME, non.white.perc, black.perc)
+state.demo$state.code =  state.abb[match(state.demo$NAME, state.name)]
+state.census$state.code = state.abb[match(state.census$NAME, state.name)]
+state.census <- state.census %>% spread(variable, value) %>% dplyr::select(-NAME)
+state.killings <- left_join(states, state.census, by=c("state"="state.code")) %>% left_join(state.demo, by=c("state"="state.code")) %>% dplyr::rename(killed = n)
+```
+
+
+```{r basemodel, echo=FALSE}
+const.model <- glm(killed ~ 1, family = "poisson",   data = state.killings)
+offset.model <- glm(killed ~ 1, family = "poisson", offset = log(POP), data = state.killings)
+
+#summary(const.model)
+display(const.model) #deviance 1302.8
+display(offset.model) #deviance 239.3
+```
+```{r racemodel}
+race.model <- glm(killed ~ black.perc, family = "quasipoisson", offset = log(POP), data = state.killings)
+# display(race.model)
+# eth.co <- coefficients(summary(race.model))[1:3, 1:2]
+# ethnicity = c("Black", "Non-White")
+# estimate = exp(eth.co[2:3, 1])
+# lower = exp(eth.co[2:3, 1] - 2 * eth.co[2:3, 2])
+# upper = exp(eth.co[2:3, 1] + 2 * eth.co[2:3, 2])
+# eth.co.df = data.frame(ethnicity, estimate, lower, upper)
+```
+
+```{r grid}
+state.df <- expand.grid(POP = seq(1e6, 4e7, 9e4), black.perc = seq(0.05, 0.75, 0.05))
+predicted.kill <- predict(race.model, type="response", newdata=state.df)
+pop.pred.df <- data.frame(state.df, predicted = as.vector(predicted.kill)) %>% mutate(NAME = "", real = FALSE)
+ggplot(pop.pred.df, aes(x = log10(POP), y = predicted, color = black.perc * 100)) + geom_line(alpha=0.6) + ggtitle("Predicted Number of Deadly Police Encounters by State", subtitle = "Quasi-Poisson Model, Offset By Population") + labs(color = "% Black Population", x = "State Population (Log Scale)", y = "Predicted Number of Killings")  + scale_color_viridis_c(option = 'viridis', direction = -1) + theme_bw()
+```
+
+```{r statepred, fig.width = 10, fig.height = 8}
+state.pred <- predict(race.model, type="response", newdata = state.killings)
+state.diffs <- data.frame(state.killings$NAME, state.killings$killed, predicted = as.vector(state.pred)) %>% mutate(MAD = abs(state.killings.killed - predicted), actual = state.killings.killed, NAME=state.killings.NAME) %>% left_join(state.killings %>% dplyr::select("NAME", "black.perc", "POP"), by=c("NAME"="NAME")) %>% dplyr::select("NAME", "actual", "predicted", "black.perc", "MAD", "POP")
+ggplot(state.diffs %>% filter(actual < 50), aes(x=actual, y=predicted, label = NAME, color = black.perc * 100)) + geom_point() + geom_smooth(method = "lm", se = F) + geom_text(aes(label = ifelse(MAD > 15 | MAD < 1, NAME, "")), alpha = .8) + ggtitle("State Model Accuracy (Actual < 50)", subtitle = "Difference in Model Fit, Outliers and Exact Predictions Labeled") + labs(y="Model Predicted Killings", x="Actual Killings", color = "% Black Population") + scale_color_viridis_c(option = 'viridis', direction = -1) + theme_bw() 
+```
+
+```{r stateresid}
+library(broom)
+residuals <- broom::augment(race.model)
+ggplot(residuals, aes(x=.resid, y=.fitted)) + geom_point() + geom_smooth()+ ggtitle("State Model Accuracy (Actual < 50)", subtitle = "Difference in Model Fit, Outliers and Exact Predictions Labeled") + labs(y="Model Predicted Killings", x="Actual Killings", color = "% Black Population") + scale_color_viridis_c(option = 'viridis', direction = -1) + theme_bw() 
+
+```
+
+
+```{r county}
+county.killings <- read.csv("police_killing_combined.csv")
+#str(county.killings)
+county.counts <- county.killings %>% 
+  mutate(fipscode = as.character(code)) %>% 
+  mutate(fipscode = str_pad(fipscode, 11, side = "left", pad="0")) %>%
+  dplyr::select(fipscode)
+county.counts <- county.counts %>% mutate(fips = str_sub(fipscode, 1, 5)) %>% group_by(fips) %>% tally() %>% rename(killed = n)
+county.demo <- get_estimates(geography = "county", product = "characteristics", breakdown = c("RACE"),          breakdown_labels = TRUE) %>% spread(RACE, value) %>% mutate(non.white.perc = 1 - `White alone or in combination`/`All races`, black.perc = `Black alone or in combination`/`All races`) %>% dplyr::select(NAME, non.white.perc, black.perc, GEOID)
+county.census <- get_estimates(geography = "county", product = "population") %>% spread(variable, value) %>% dplyr::select(-NAME)
+county.counts <- left_join(county.counts, county.demo, by=c("fips"="GEOID")) %>% left_join(county.census, by=c("fips"="GEOID"))
+```
+
+```{r countymodel}
+county.const.model <- glm(killed ~ 1, family = "poisson",   data = county.counts)
+display(county.const.model) #deviance 1104
+county.pop.model <- glm(killed ~ 1, family = "poisson", offset = log(POP), data = county.counts)
+display(county.pop.model) #deviance = 877
+county.race.model <- glm(killed ~  non.white.perc , family = "quasipoisson", offset = log(POP), data = county.counts)
+display(county.race.model) #deviance = 786
+```
+
+
+```{r countygrid}
+county.grid <- expand.grid(POP = seq(2000, 5e6, 6000), non.white.perc = seq(0.05, 0.6, 0.05))
+county.predicted.kill <- predict(county.race.model, type="response", newdata=county.grid)
+county.pred.df <- data.frame(county.grid, predicted = as.vector(county.predicted.kill))
+ggplot(county.pred.df, aes(x = log10(POP), y = predicted, color = 100 * non.white.perc)) + geom_line(alpha = 0.6) + ggtitle("Predicted Number of Deadly Police Encounters By County", subtitle = "Quasi-Poisson Model, Offset By Population") + labs(color = "% Non-White", x = "County Population (Log 10 Scale)", y = "Predicted Number of Deaths") + scale_color_viridis_c(option = 'blues', direction = -1) + theme_bw()
+```
+
+
+
+```{r countyacc}
+county.pred <- predict(county.race.model, type="response", newdata = county.counts)
+county.diffs <- data.frame(county.counts$NAME, county.counts$killed, predicted = as.vector(county.pred)) %>% mutate(MAD = abs(county.counts.killed - predicted), actual = county.counts.killed, NAME=county.counts.NAME) %>% left_join(county.counts %>% dplyr::select("NAME", "non.white.perc", "POP"), by=c("NAME"="NAME")) %>% dplyr::select("NAME", "actual", "predicted", "non.white.perc", "MAD", "POP")
+ggplot(county.diffs %>% filter(actual < 20 & actual > 3), aes(x=actual, y=predicted, label = NAME, color = non.white.perc * 100)) + geom_point() + geom_smooth(method = "lm", se = F) + geom_text(aes(label = ifelse(MAD > 8 , NAME, "")), alpha = .8) + ggtitle("County Model Accuracy (Actual < 20 and > 3)", subtitle = "Difference in Model Fit, Outliers Labeled") + labs(y="Model Predicted Killings", x="Actual Killings", color = "% NonWhite Population") + scale_color_viridis_c(option = 'viridis', direction = -1) + theme_bw() 
+```
